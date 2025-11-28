@@ -1,0 +1,13 @@
+{
+  "name": "exploding-kittens-3d",
+  "version": "2.0.0",
+  "description": "Exploding Kittens with 3D Visuals",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}

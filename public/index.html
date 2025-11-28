@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 拆弹猫</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="lobby">
+    <div class="panel">
+        <h1>💣 Exploding Kittens 3D</h1>
+        <input type="text" id="username" placeholder="输入昵称" maxlength="8">
+        <button onclick="joinGame()">加入房间</button>
+        <div id="lobby-status"></div>
+        <ul id="player-list"></ul>
+        <button id="start-btn" onclick="startGame()" style="display:none;" class="highlight-btn">🔥 开始游戏</button>
+    </div>
+</div>
+
+<div id="game-ui" style="display:none;">
+    <div class="top-bar">
+        <div id="status-text">等待开局...</div>
+        <div id="turn-info"></div>
+    </div>
+
+    <div id="opponents"></div>
+
+    <div class="table-3d-container">
+        <div class="table-surface">
+            <div id="draw-pile-area">
+                <div id="draw-pile-info">
+                    <div class="card-count">剩余: <span id="card-count">0</span> 张</div>
+                    <div class="bomb-probability">💣 <span id="bomb-prob">0%</span></div>
+                </div>
+                <div id="draw-pile-3d" onclick="drawCard()">
+                </div>
+                <div class="pile-label">点击摸牌</div>
+            </div>
+
+            <div id="discard-pile-area">
+                <div id="discard-pile-3d">
+                    <div class="card discard-placeholder">弃牌堆</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="hand-area">
+        <div id="my-hand"></div>
+        <button id="play-card-btn" onclick="playSelectedCard()" style="display:none; margin-left: 20px; background: #27ae60; font-size: 18px; padding: 15px 30px;">出牌</button>
+    </div>
+
+    <!-- 游戏日志面板 -->
+    <div id="game-log-panel" class="minimized">
+        <button id="log-toggle-btn" onclick="toggleGameLog()">📜</button>
+        <div id="game-log-content"></div>
+    </div>
+</div>
+
+<div id="bomb-modal" class="modal">
+    <div class="modal-content danger-theme">
+        <h3>🧨 拆除成功！</h3>
+        <p>你想把炸弹藏在哪？</p>
+        <div class="bomb-position-buttons">
+            <button class="bomb-pos-btn" onclick="confirmBomb(0)">
+                <div class="pos-icon">1️⃣</div>
+                <div class="pos-label">牌顶(下张)</div>
+            </button>
+            <button class="bomb-pos-btn" onclick="confirmBomb(1)">
+                <div class="pos-icon">2️⃣</div>
+                <div class="pos-label">第二张</div>
+            </button>
+            <button class="bomb-pos-btn" onclick="confirmBomb(2)">
+                <div class="pos-icon">3️⃣</div>
+                <div class="pos-label">第三张</div>
+            </button>
+            <button class="bomb-pos-btn" onclick="confirmBomb(-1)">
+                <div class="pos-icon">🔻</div>
+                <div class="pos-label">牌底</div>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="future-modal" class="modal">
+    <div class="modal-content">
+        <h3>👁️ 透视：牌堆顶部三张牌</h3>
+        <div id="future-cards"></div>
+        <button onclick="document.getElementById('future-modal').style.display='none'">关闭</button>
+    </div>
+</div>
+
+<div id="future-text-modal" class="modal">
+    <div class="modal-content">
+        <h3 id="future-text-content">预言结果</h3>
+        <button onclick="document.getElementById('future-text-modal').style.display='none'">知道了</button>
+    </div>
+</div>
+
+<div id="target-select-modal" class="modal">
+    <div class="modal-content">
+        <h3 id="target-select-title">选择目标对手</h3>
+        <div id="target-players"></div>
+    </div>
+</div>
+
+<div id="give-card-modal" class="modal">
+    <div class="modal-content">
+        <h3 id="give-card-title">选择一张牌给对手</h3>
+        <div id="give-card-hand"></div>
+    </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="client.js"></script>
+</body>
+</html>
