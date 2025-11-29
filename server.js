@@ -57,8 +57,8 @@ function initDeck(playerCount) {
         p.attackCount = 0; // 被甩锅的次数
     });
 
-    // 3. 放入炸弹 (人数-1)
-    for(let i=0; i < playerCount - 1; i++) d.push({type: CARD_TYPES.BOMB, id: Math.random()});
+    // 3. 放入炸弹 (与人数相等)
+    for(let i=0; i < playerCount; i++) d.push({type: CARD_TYPES.BOMB, id: Math.random()});
 
     // 4. 放入剩余拆除 (假设总共6张)
     let extraDefuse = 6 - playerCount;
@@ -152,7 +152,7 @@ io.on('connection', (socket) => {
         turnsLeftToTake = 1;
         deck = initDeck(players.length);
         gameStatus = 'playing';
-        sendGameLog(`🎮 游戏开始！共 ${players.length} 名玩家，牌堆中有 ${players.length - 1} 颗炸弹`, 'info');
+        sendGameLog(`🎮 游戏开始！共 ${players.length} 名玩家，牌堆中有 ${players.length} 颗炸弹`, 'info');
         updateGame("游戏开始！炸弹已埋好...");
     });
 
