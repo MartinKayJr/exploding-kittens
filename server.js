@@ -147,7 +147,19 @@ io.on('connection', (socket) => {
     });
 
     socket.on('start', () => {
-        if(players.length < 2) return;
+        const player = players.find(p => p.id === socket.id);
+
+        // 只有房主可以开始项目
+        if(!player || !player.isHost) {
+            socket.emit('gameLog', { message: '只有房主可以开始项目！', type: 'error' });
+            return;
+        }
+
+        if(players.length < 2) {
+            socket.emit('gameLog', { message: '至少需要2名玩家才能开始项目！', type: 'error' });
+            return;
+        }
+
         turnIndex = 0;
         turnsLeftToTake = 1;
         deck = initDeck(players.length);

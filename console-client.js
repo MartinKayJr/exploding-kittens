@@ -50,6 +50,7 @@ let currentPlayers = [];
 let pendingRequesterId = null;
 let lastPlayedCard = null;
 let lastPlayedBy = null;
+let isHost = false;
 
 // 场景状态
 let currentScene = 'login'; // login, lobby, game
@@ -290,31 +291,12 @@ const gameTitle = blessed.box({
     }
 });
 
-// 左侧：牌堆信息
-const deckBox = blessed.box({
+// 左侧：炸弹概率（扩大显示）
+const bombRateBox = blessed.box({
     top: 3,
     left: 0,
     width: '25%',
-    height: '20%',
-    label: ' 牌堆 ',
-    border: {
-        type: 'line'
-    },
-    style: {
-        fg: 'white',
-        border: {
-            fg: 'gray'
-        }
-    },
-    tags: true
-});
-
-// 左侧：炸弹概率
-const bombRateBox = blessed.box({
-    top: '23%',
-    left: 0,
-    width: '25%',
-    height: '20%',
+    height: '40%',
     label: ' 炸弹概率 ',
     border: {
         type: 'line'
@@ -322,7 +304,7 @@ const bombRateBox = blessed.box({
     style: {
         fg: 'white',
         border: {
-            fg: 'gray'
+            fg: 'cyan'
         }
     },
     tags: true,
@@ -415,7 +397,6 @@ const actionHint = blessed.box({
 });
 
 gameScene.append(gameTitle);
-gameScene.append(deckBox);
 gameScene.append(bombRateBox);
 gameScene.append(playArea);
 gameScene.append(playerBox);
@@ -426,8 +407,8 @@ gameScene.append(actionHint);
 const selectionDialog = blessed.list({
     top: 'center',
     left: 'center',
-    width: '70%',
-    height: '70%',
+    width: '50%',
+    height: '60%',
     label: ' 选择 ',
     border: {
         type: 'line'
@@ -540,8 +521,7 @@ function showScene(scene) {
 
 function updateDeckArea() {
     if (!gameState) {
-        deckBox.setContent('{center}等待中...{/center}');
-        bombRateBox.setContent('{center}\n\n{green-fg}安全{/green-fg}\n{bold}0.0%{/bold}{/center}');
+        bombRateBox.setContent('{center}\n\n安全 - 剩0张 - 0.0%{/center}');
         screen.render();
         return;
     }
@@ -551,43 +531,31 @@ function updateDeckArea() {
     const probability = deckCount > 0 ? ((bombsInDeck / deckCount) * 100).toFixed(1) : '0.0';
     const probNum = parseFloat(probability);
 
-    let content = '\n';
-    content += '  ╔═══════╗\n';
-    content += '  ║ ■ ■ ■ ║\n';
-    content += '  ║ ■ ■ ■ ║\n';
-    content += '  ╚═══════╝\n';
-    content += '\n';
-    content += `  剩余: {bold}${deckCount}{/bold} 张\n`;
-    content += `  炸弹: {bold}${bombsInDeck}{/bold} 个`;
-
-    deckBox.setContent(content);
-
     let rateColor = 'green-fg';
     let rateLabel = '安全';
 
     if (bombsInDeck === 0) {
         rateColor = 'green-fg';
         rateLabel = '无炸弹';
-    } else if (probNum > 50) {
+    } else if (probNum >= 50) {
         rateColor = 'red-fg';
         rateLabel = '危险';
-    } else if (probNum > 25) {
+    } else if (probNum >= 25) {
         rateColor = 'yellow-fg';
         rateLabel = '警告';
+    } else if (probNum >= 10) {
+        rateColor = 'yellow-fg';
+        rateLabel = '注意';
+    } else if (probNum > 0) {
+        rateColor = 'cyan-fg';
+        rateLabel = '较低';
     }
 
-    const barWidth = 16;
-    const filledWidth = Math.round((probNum / 100) * barWidth);
-    const emptyWidth = barWidth - filledWidth;
-    const filled = '█'.repeat(filledWidth);
-    const empty = '░'.repeat(emptyWidth);
-
-    let rateContent = '\n';
-    rateContent += `{center}{${rateColor}}{bold}${rateLabel}{/bold}{/${rateColor}}{/center}\n`;
-    rateContent += '\n';
-    rateContent += `{center}{bold}${probability}%{/bold}{/center}\n`;
-    rateContent += '\n';
-    rateContent += `{center}{${rateColor}}${filled}{/${rateColor}}{gray-fg}${empty}{/gray-fg}{/center}\n`;
+    // 简洁的一行显示：状态 - 剩余张数 - 概率
+    let rateContent = '\n\n';
+    rateContent += `{center}{${rateColor}}{bold}${rateLabel}{/bold}{/${rateColor}} - `;
+    rateContent += `剩{bold}${deckCount}{/bold}张 - `;
+    rateContent += `{${rateColor}}{bold}${probability}%{/bold}{/${rateColor}}{/center}`;
 
     bombRateBox.setContent(rateContent);
     screen.render();
@@ -603,18 +571,11 @@ function updatePlayArea() {
     const cardName = getCardName(lastPlayedCard);
     const symbol = getCardSymbol(lastPlayedCard);
 
-    const lines = [
-        '┌─────────┐',
-        `│ ${cardName}${' '.repeat(Math.max(0, 5 - cardName.length))} │`,
-        '│         │',
-        `│   ${symbol}    │`,
-        '│         │',
-        `│${' '.repeat(Math.max(0, 5 - cardName.length))}${cardName} │`,
-        '└─────────┘'
-    ];
+    let content = '\n\n\n';
+    content += `{center}{bold}${symbol} ${cardName}{/bold}{/center}\n\n`;
+    content += `{center}{gray-fg}${lastPlayedBy}{/gray-fg}{/center}`;
 
-    const card = lines.join('\n');
-    playArea.setContent('\n' + card + `\n\n{center}${lastPlayedBy}{/center}`);
+    playArea.setContent(content);
     screen.render();
 }
 
@@ -671,17 +632,22 @@ function updateActionHint() {
 }
 
 function showCardSelection() {
-    if (myHand.length === 0) {
-        addLog('没有卡牌可出');
+    // 过滤掉拆除卡和炸弹卡（不能主动出）
+    const playableCards = myHand
+        .map((card, originalIndex) => ({ card, originalIndex }))
+        .filter(item => item.card.type !== '拆除' && item.card.type !== '炸弹');
+
+    if (playableCards.length === 0) {
+        addLog('没有可以出的牌（拆除卡和炸弹卡不能主动出）');
         return;
     }
 
     selectionDialog.clearItems();
     selectionDialog.setLabel(' 选择要出的牌 (↑↓选择, Enter确认, ESC取消) ');
 
-    const items = myHand.map((card, idx) => {
-        const symbol = getCardSymbol(card.type);
-        const name = getCardName(card.type);
+    const items = playableCards.map(item => {
+        const symbol = getCardSymbol(item.card.type);
+        const name = getCardName(item.card.type);
         return `${symbol} ${name}`;
     });
 
@@ -696,8 +662,10 @@ function showCardSelection() {
         selectionDialog.removeListener('select', handleSelect);
         selectionDialog.removeListener('cancel', handleCancel);
         selectionDialog.hide();
-        socket.emit('play', { index });
-        addLog(`出牌: ${myHand[index].type}`);
+        // 使用原始索引，因为我们过滤了某些牌
+        const originalIndex = playableCards[index].originalIndex;
+        socket.emit('play', { index: originalIndex });
+        addLog(`出牌: ${myHand[originalIndex].type}`);
         screen.render();
     };
 
@@ -798,14 +766,27 @@ function connectToServer() {
     socket.on('playerList', (players) => {
         currentPlayers = players;
 
+        // 检查自己是否是房主
+        const me = players.find(p => p.id === socket.id);
+        isHost = me ? me.isHost : false;
+
         if (currentScene === 'lobby') {
             let content = '\n';
             players.forEach((p, idx) => {
                 const isMe = p.id === socket.id;
-                const mark = isMe ? ' (你)' : '';
-                content += `  ${idx + 1}. ${p.name}${mark}\n`;
+                const hostMark = p.isHost ? ' 👑' : '';
+                const meMark = isMe ? ' (你)' : '';
+                content += `  ${idx + 1}. ${p.name}${hostMark}${meMark}\n`;
             });
             lobbyPlayerList.setContent(content);
+
+            // 更新状态提示
+            if (isHost) {
+                lobbyStatus.setContent('{center}{green-fg}你是房主，按 Enter 开始游戏{/green-fg}{/center}');
+            } else {
+                lobbyStatus.setContent('{center}等待房主开始游戏...{/center}');
+            }
+
             screen.render();
         } else if (currentScene === 'game') {
             updatePlayerList();
@@ -971,6 +952,10 @@ startButton.on('press', () => {
 
 // 大厅场景 - Enter 键开始游戏
 startButton.key(['enter', 'space'], () => {
+    if (!isHost) {
+        addLog('只有房主可以开始游戏！');
+        return;
+    }
     socket.emit('start');
     addLog('开始游戏...');
 });
@@ -978,6 +963,10 @@ startButton.key(['enter', 'space'], () => {
 // 大厅场景全局按键
 screen.key(['enter'], () => {
     if (currentScene === 'lobby') {
+        if (!isHost) {
+            addLog('只有房主可以开始游戏！');
+            return;
+        }
         socket.emit('start');
         addLog('开始游戏...');
     }
@@ -1011,17 +1000,7 @@ screen.key(['escape'], () => {
     }
 });
 
-// 选择对话框按键 - 确保方向键和确认键都能正常工作
-selectionDialog.key(['up', 'k'], () => {
-    selectionDialog.up();
-    screen.render();
-});
-
-selectionDialog.key(['down', 'j'], () => {
-    selectionDialog.down();
-    screen.render();
-});
-
+// 选择对话框按键 - blessed list 已内置方向键支持，只需处理确认和取消
 selectionDialog.key(['enter'], () => {
     const selected = selectionDialog.selected;
     selectionDialog.emit('select', selectionDialog.items[selected], selected);
