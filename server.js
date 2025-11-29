@@ -130,7 +130,7 @@ function updateGame(log = "") {
 io.on('connection', (socket) => {
     socket.on('join', (name) => {
         if(gameStatus !== 'lobby') {
-            socket.emit('gameLog', { message: '游戏已开始，无法加入！', type: 'error' });
+            socket.emit('gameLog', { message: '项目已开始，无法加入！', type: 'error' });
             return;
         }
 

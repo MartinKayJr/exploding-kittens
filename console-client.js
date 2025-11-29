@@ -232,7 +232,7 @@ const startButton = blessed.button({
     left: 'center',
     width: 20,
     height: 3,
-    content: '{center}开始游戏{/center}',
+    content: '{center}开始项目{/center}',
     tags: true,
     border: {
         type: 'line'
@@ -255,7 +255,7 @@ const lobbyStatus = blessed.box({
     left: 'center',
     width: '80%',
     height: 1,
-    content: '{center}等待房主开始游戏...{/center}',
+    content: '{center}等待房主开始项目...{/center}',
     tags: true,
     style: {
         fg: 'gray'
@@ -267,7 +267,7 @@ lobbyScene.append(lobbyPlayerList);
 lobbyScene.append(startButton);
 lobbyScene.append(lobbyStatus);
 
-// ========== 场景：游戏界面 ==========
+// ========== 场景：项目界面 ==========
 const gameScene = blessed.box({
     top: 0,
     left: 0,
@@ -351,13 +351,13 @@ const playerBox = blessed.box({
     scrollable: true
 });
 
-// 游戏日志
+// 项目日志
 const gameLog = blessed.log({
     top: '43%',
     left: 0,
     width: '100%',
     height: '30%',
-    label: ' 游戏日志 ',
+    label: ' 项目日志 ',
     border: {
         type: 'line'
     },
@@ -808,9 +808,9 @@ function connectToServer() {
 
             // 更新状态提示
             if (isHost) {
-                lobbyStatus.setContent('{center}{green-fg}你是房主，按 Enter 开始游戏{/green-fg}{/center}');
+                lobbyStatus.setContent('{center}{green-fg}你是房主，按 Enter 开始项目{/green-fg}{/center}');
             } else {
-                lobbyStatus.setContent('{center}等待房主开始游戏...{/center}');
+                lobbyStatus.setContent('{center}等待房主开始项目...{/center}');
             }
 
             screen.render();
@@ -848,7 +848,7 @@ function connectToServer() {
     });
 
     socket.on('gameOver', (winner) => {
-        addLog(`游戏结束！胜者: ${winner}`);
+        addLog(`项目结束！胜者: ${winner}`);
         lastPlayedCard = null;
         lastPlayedBy = null;
         updatePlayArea();
@@ -958,7 +958,7 @@ nameInputArea.key(['enter'], () => {
 
     myName = name;
     socket.emit('join', myName);
-    addLog(`尝试加入游戏: ${myName}...`);
+    addLog(`尝试加入项目: ${myName}...`);
     // 注意：不立即切换场景，等待服务器确认
 });
 
@@ -973,32 +973,32 @@ nameInputArea.key(['escape'], () => {
 // 大厅场景
 startButton.on('press', () => {
     socket.emit('start');
-    addLog('开始游戏...');
+    addLog('开始项目...');
 });
 
-// 大厅场景 - Enter 键开始游戏
+// 大厅场景 - Enter 键开始项目
 startButton.key(['enter', 'space'], () => {
     if (!isHost) {
-        addLog('只有房主可以开始游戏！');
+        addLog('只有房主可以开始项目！');
         return;
     }
     socket.emit('start');
-    addLog('开始游戏...');
+    addLog('开始项目...');
 });
 
 // 大厅场景全局按键
 screen.key(['enter'], () => {
     if (currentScene === 'lobby') {
         if (!isHost) {
-            addLog('只有房主可以开始游戏！');
+            addLog('只有房主可以开始项目！');
             return;
         }
         socket.emit('start');
-        addLog('开始游戏...');
+        addLog('开始项目...');
     }
 });
 
-// 游戏场景 - 全局按键
+// 项目场景 - 全局按键
 screen.key(['space'], () => {
     if (currentScene !== 'game' || !isMyTurn) return;
     if (selectionDialog.visible || infoDialog.visible) return;
@@ -1012,7 +1012,7 @@ screen.key(['d', 'D'], () => {
     addLog('抽牌...');
 });
 
-// ESC 键处理（仅在游戏场景）
+// ESC 键处理（仅在项目场景）
 screen.key(['escape'], () => {
     if (currentScene !== 'game') return;
 
