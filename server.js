@@ -164,6 +164,13 @@ io.on('connection', (socket) => {
 
         const p = players.find(p => p.id === socket.id);
 
+        // 广播抽到的牌（显示在出牌区）
+        io.emit('cardPlayed', {
+            cardType: card.type,
+            playerName: `${p.name} 抽到`,
+            playerId: p.id
+        });
+
         if(card.type === CARD_TYPES.BOMB) {
             const defuseIdx = p.hand.findIndex(c => c.type === CARD_TYPES.DEFUSE);
 
@@ -210,6 +217,13 @@ io.on('connection', (socket) => {
 
         p.hand.splice(index, 1);
         discardPile.push(card);
+
+        // 广播出牌信息到所有客户端（用于显示出牌区）
+        io.emit('cardPlayed', {
+            cardType: card.type,
+            playerName: p.name,
+            playerId: p.id
+        });
 
         let msg = `${p.name} 使用了 ${card.type}`;
 
