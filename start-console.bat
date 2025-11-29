@@ -27,7 +27,33 @@ echo.
 echo 正在启动... Starting...
 echo.
 
+REM 切换到脚本所在目录
+cd /d "%~dp0"
+
+REM 检查文件是否存在
+if not exist "console-client.js" (
+    echo Error: console-client.js not found!
+    echo Please make sure you are running this script from the project directory.
+    pause
+    exit /b 1
+)
+
+REM 检查 node_modules 是否存在
+if not exist "node_modules" (
+    echo.
+    echo Warning: node_modules folder not found!
+    echo Installing dependencies...
+    echo.
+    call npm install
+    echo.
+    if errorlevel 1 (
+        echo Error: Failed to install dependencies!
+        pause
+        exit /b 1
+    )
+)
+
 REM 传递所有命令行参数给 node 脚本
-node console-client.js %*
+node "console-client.js" %*
 
 pause

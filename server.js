@@ -10,7 +10,7 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
-// --- 游戏配置 ---
+// --- 项目配置 ---
 const CARD_TYPES = {
     BOMB: '炸弹',
     DEFUSE: '拆除',
@@ -142,7 +142,7 @@ io.on('connection', (socket) => {
 
         const isHost = players.length === 0;
         players.push({ id: socket.id, name, hand: [], isAlive: true, isHost });
-        sendGameLog(`${name} 加入了游戏${isHost ? ' (房主)' : ''}`, 'join');
+        sendGameLog(`${name} 加入了项目${isHost ? ' (房主)' : ''}`, 'join');
         io.emit('playerList', players);
     });
 
@@ -152,8 +152,8 @@ io.on('connection', (socket) => {
         turnsLeftToTake = 1;
         deck = initDeck(players.length);
         gameStatus = 'playing';
-        sendGameLog(`🎮 游戏开始！共 ${players.length} 名玩家，牌堆中有 ${players.length} 颗炸弹`, 'info');
-        updateGame("游戏开始！炸弹已埋好...");
+        sendGameLog(`🎮 项目开始！共 ${players.length} 名玩家，牌堆中有 ${players.length} 颗炸弹`, 'info');
+        updateGame("项目开始！炸弹已埋好...");
     });
 
     socket.on('draw', () => {
@@ -371,7 +371,7 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         const player = players.find(p => p.id === socket.id);
         if(player) {
-            sendGameLog(`${player.name} 离开了游戏`, 'leave');
+            sendGameLog(`${player.name} 离开了项目`, 'leave');
         }
         players = players.filter(p => p.id !== socket.id);
         if(players.length===0) { gameStatus='lobby'; players=[]; }
