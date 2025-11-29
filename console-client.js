@@ -763,6 +763,32 @@ function connectToServer() {
         addLog('与服务器断开连接');
     });
 
+    socket.on('nameRejected', (data) => {
+        addLog(`名字被拒绝: ${data.reason}`);
+        // 显示错误提示
+        loginStatus.setContent('{center}{red-fg}该名字已被使用，请换一个！{/red-fg}{/center}');
+        screen.render();
+
+        // 确保在登录界面
+        if (currentScene !== 'login') {
+            showScene('login');
+        }
+
+        setTimeout(() => {
+            loginStatus.setContent('{center}{gray-fg}支持中文、英文、数字 | 按 Ctrl+C 退出{/gray-fg}{/center}');
+            nameInputArea.clearValue();
+            nameInputArea.focus();
+            screen.render();
+        }, 2000);
+    });
+
+    socket.on('nameAccepted', () => {
+        // 名字被接受，可以进入大厅
+        if (currentScene === 'login') {
+            showScene('lobby');
+        }
+    });
+
     socket.on('playerList', (players) => {
         currentPlayers = players;
 
@@ -932,8 +958,8 @@ nameInputArea.key(['enter'], () => {
 
     myName = name;
     socket.emit('join', myName);
-    addLog(`加入游戏: ${myName}`);
-    showScene('lobby');
+    addLog(`尝试加入游戏: ${myName}...`);
+    // 注意：不立即切换场景，等待服务器确认
 });
 
 // ESC 清空输入

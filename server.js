@@ -129,21 +129,49 @@ function updateGame(log = "") {
 
 io.on('connection', (socket) => {
     socket.on('join', (name) => {
-        if(gameStatus !== 'lobby') return;
+        if(gameStatus !== 'lobby') {
+            socket.emit('gameLog', { message: '游戏已开始，无法加入！', type: 'error' });
+            return;
+        }
+
+        // 检查名字是否为空
+        if(!name || name.trim() === '') {
+            socket.emit('gameLog', { message: '名字不能为空！', type: 'error' });
+            return;
+        }
+
+        const trimmedName = name.trim();
 
         // 检查该玩家是否已经加入
         const existingPlayer = players.find(p => p.id === socket.id);
         if(existingPlayer) {
-            // 已经加入，只更新名字
-            existingPlayer.name = name;
+            // 已经加入，检查是否要改名
+            if(existingPlayer.name !== trimmedName) {
+                // 检查新名字是否被其他人使用
+                const nameTaken = players.find(p => p.id !== socket.id && p.name === trimmedName);
+                if(nameTaken) {
+                    socket.emit('gameLog', { message: '该名字已被使用，请换一个！', type: 'error' });
+                    return;
+                }
+                existingPlayer.name = trimmedName;
+            }
             io.emit('playerList', players);
             return;
         }
 
+        // 检查名字是否已被使用
+        const nameTaken = players.find(p => p.name === trimmedName);
+        if(nameTaken) {
+            socket.emit('gameLog', { message: '该名字已被使用，请换一个！', type: 'error' });
+            socket.emit('nameRejected', { reason: '名字已被使用' });
+            return;
+        }
+
         const isHost = players.length === 0;
-        players.push({ id: socket.id, name, hand: [], isAlive: true, isHost });
-        sendGameLog(`${name} 加入了项目${isHost ? ' (房主)' : ''}`, 'join');
+        players.push({ id: socket.id, name: trimmedName, hand: [], isAlive: true, isHost });
+        sendGameLog(`${trimmedName} 加入了项目${isHost ? ' (房主)' : ''}`, 'join');
         io.emit('playerList', players);
+        socket.emit('nameAccepted');
     });
 
     socket.on('start', () => {
