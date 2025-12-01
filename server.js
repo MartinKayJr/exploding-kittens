@@ -20,7 +20,7 @@ const CARD_TYPES = {
     FUTURE: '预言',
     PERSPECTIVE: '透视',
     SHUFFLE: '洗牌',
-    STEAL: '抽卡',
+    STEAL: '索要',
     DRAW_BOTTOM: '抽底',
     SWAP: '交换',
     NOPE: '否定'
@@ -35,9 +35,88 @@ let turnsLeftToTake = 1;
 let gameStatus = 'lobby';
 let defusingPlayerId = null;
 
+// 否定卡机制
+let pendingAction = null; // 待处理的动作 {type, playerId, data, canBeNoped}
+let nopeWindow = null; // 否定响应的定时器
+let nopeChain = []; // 否定链：[{playerId, playerName}]
+const NOPE_WAIT_TIME = 3000; // 等待否定的时间（毫秒）
+
 // --- 辅助函数 ---
 function sendGameLog(message, type = 'info') {
     io.emit('gameLog', { message, type });
+}
+
+// 否定卡机制函数
+function startNopeWindow(action) {
+    pendingAction = action;
+    nopeChain = [];
+
+    // 获取卡牌中文名称
+    const cardTypeMap = {
+        'attack': '甩锅',
+        'attack_2x': '甩锅x2',
+        'skip': '跳过',
+        'future': '预言',
+        'perspective': '透视',
+        'shuffle': '洗牌',
+        'steal': '索要',
+        'draw_bottom': '抽底',
+        'swap': '交换'
+    };
+    const cardName = cardTypeMap[action.type] || action.type;
+
+    // 广播等待否定事件
+    io.emit('nopeWindowStart', {
+        action: action.type,
+        cardName: cardName,
+        playerName: action.playerName,
+        targetName: action.data?.targetName || null,
+        isSelfTarget: action.data?.isSelfAttack || false,
+        waitTime: NOPE_WAIT_TIME
+    });
+
+    sendGameLog(`等待否定... (${NOPE_WAIT_TIME/1000}秒)`, 'nope');
+
+    // 设置定时器，时间到后执行动作
+    nopeWindow = setTimeout(() => {
+        executeOrCancelAction();
+    }, NOPE_WAIT_TIME);
+}
+
+function executeOrCancelAction() {
+    if (!pendingAction) return;
+
+    const nopedCount = nopeChain.length;
+    const isCancelled = nopedCount % 2 === 1; // 奇数次否定 = 取消
+
+    // 广播否定窗口结束
+    io.emit('nopeWindowEnd', {
+        nopedCount,
+        isCancelled,
+        nopeChain
+    });
+
+    if (isCancelled) {
+        sendGameLog(`动作被否定！(否定次数: ${nopedCount})`, 'nope');
+    } else {
+        if (nopedCount > 0) {
+            sendGameLog(`否定被否定！动作继续执行 (否定次数: ${nopedCount})`, 'nope');
+        }
+        // 执行原动作
+        executeAction(pendingAction);
+    }
+
+    // 清理
+    pendingAction = null;
+    nopeChain = [];
+    nopeWindow = null;
+}
+
+function executeAction(action) {
+    // 执行动作的回调函数
+    if (action && action.executeCallback) {
+        action.executeCallback();
+    }
 }
 
 function initDeck(playerCount) {
@@ -278,188 +357,346 @@ io.on('connection', (socket) => {
 
         if(card.type === CARD_TYPES.ATTACK) {
             // 甩锅（x1）：跳过自己的摸牌，立即切换回合到目标玩家，目标需要抽牌次数+1
-            const target = players.find(p => p.id === targetId && p.isAlive);
-            if(target) {
-                const isSelfAttack = p.id === targetId;
-
-                if(isSelfAttack) {
-                    // 甩锅给自己：增加自己的摸牌次数
-                    turnsLeftToTake += 1;
-                    msg += ` 对自己`;
-                    sendGameLog(`🍳 ${p.name} 甩锅给自己！增加摸牌次数`, 'attack');
-                    sendGameLog(`${p.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
-                    updateGame(msg);
-                } else {
-                    // 甩锅给别人
-                    msg += ` 对 ${target.name}`;
-                    sendGameLog(`🍳 ${p.name} 甩锅给 ${target.name}！`, 'attack');
-
-                    // 找到目标玩家的索引
-                    const targetIndex = players.findIndex(p => p.id === targetId);
-                    if(targetIndex !== -1) {
-                        // 立即切换到目标玩家
-                        turnIndex = targetIndex;
-                        // x1 甩锅：累加1次（而不是直接设置为1）
-                        turnsLeftToTake = turnsLeftToTake + 1;
-                        sendGameLog(`${target.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
-                        updateGame(msg);
-                    } else {
-                        nextTurn();
-                    }
-                }
-            } else {
-                nextTurn();
-            }
-        }
-        else if(card.type === CARD_TYPES.ATTACK_2X) {
-            // 双重甩锅（x2）：跳过自己的摸牌，立即切换回合到目标玩家，目标需要抽牌次数+2
-            const target = players.find(p => p.id === targetId && p.isAlive);
-            if(target) {
-                const isSelfAttack = p.id === targetId;
-
-                if(isSelfAttack) {
-                    // 甩锅给自己：增加自己的摸牌次数
-                    turnsLeftToTake += 2;
-                    msg += ` 对自己`;
-                    sendGameLog(`🍳🍳 ${p.name} 双重甩锅给自己！增加摸牌次数`, 'attack');
-                    sendGameLog(`${p.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
-                    updateGame(msg);
-                } else {
-                    // 甩锅给别人
-                    msg += ` 对 ${target.name}`;
-                    sendGameLog(`🍳🍳 ${p.name} 双重甩锅给 ${target.name}！`, 'attack');
-
-                    // 找到目标玩家的索引
-                    const targetIndex = players.findIndex(p => p.id === targetId);
-                    if(targetIndex !== -1) {
-                        // 立即切换到目标玩家
-                        turnIndex = targetIndex;
-                        // x2 甩锅：累加2次（而不是直接设置为2）
-                        turnsLeftToTake = turnsLeftToTake + 2;
-                        sendGameLog(`${target.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
-                        updateGame(msg);
-                    } else {
-                        nextTurn();
-                    }
-                }
-            } else {
-                nextTurn();
-            }
-        }
-        else if(card.type === CARD_TYPES.SKIP) {
-            turnsLeftToTake--;
-            if(turnsLeftToTake === 0) {
-                sendGameLog(`⏭️ ${p.name} 跳过了回合`, 'play');
-                nextTurn();
-            } else {
-                sendGameLog(`⏭️ ${p.name} 跳过了1次，还需要出牌 ${turnsLeftToTake} 次`, 'play');
-                updateGame(msg);
-            }
-        }
-        else if(card.type === CARD_TYPES.FUTURE) {
-            // 预言：告诉玩家炸弹在第几张
-            const futureCards = deck.slice(-3).reverse();
-            const bombIndex = futureCards.findIndex(c => c.type === CARD_TYPES.BOMB);
-
-            if(bombIndex !== -1) {
-                const position = bombIndex + 1; // 转换为1-based索引
-                socket.emit('showFutureText', `🔮 预言：炸弹在接下来的第 ${position} 张牌！`);
-                sendGameLog(`🔮 ${p.name} 使用预言，发现了炸弹的位置`, 'play');
-            } else {
-                socket.emit('showFutureText', `🔮 预言：接下来的3张牌中没有炸弹，安全！`);
-                sendGameLog(`🔮 ${p.name} 使用预言查看未来`, 'play');
-            }
-            updateGame(msg);
-        }
-        else if(card.type === CARD_TYPES.PERSPECTIVE) {
-            // 透视：显示前三张牌的牌面
-            socket.emit('showFuture', deck.slice(-3).reverse());
-            sendGameLog(`👁️ ${p.name} 使用透视查看牌堆顶部三张牌`, 'play');
-            updateGame(msg);
-        }
-        else if(card.type === CARD_TYPES.SHUFFLE) {
-            deck.sort(()=>Math.random()-0.5);
-            sendGameLog(`🔀 ${p.name} 使用洗牌重新洗牌`, 'play');
-            updateGame(msg);
-        }
-        else if(card.type === CARD_TYPES.STEAL) {
-            // 索要：让目标玩家选一张牌给出
-            const target = players.find(p => p.id === targetId && p.isAlive);
-            if(target && target.hand.length > 0) {
-                msg += ` 对 ${target.name}`;
-                sendGameLog(`🎯 ${p.name} 向 ${target.name} 索要一张牌`, 'play');
-                updateGame(msg);
-                io.to(targetId).emit('giveCard', { requesterId: socket.id, requesterName: p.name });
-            } else {
-                updateGame(msg);
-            }
-        }
-        else if(card.type === CARD_TYPES.SWAP) {
-            // 交换：两人手牌互换
-            const target = players.find(p => p.id === targetId && p.isAlive);
-            if(target) {
-                const temp = p.hand;
-                p.hand = target.hand;
-                target.hand = temp;
-                msg += ` 与 ${target.name} 交换手牌`;
-                sendGameLog(`🔄 ${p.name} 与 ${target.name} 交换了手牌`, 'play');
-                updateGame(msg);
-                // 更新双方手牌
-                io.to(p.id).emit('handUpdate', p.hand);
-                io.to(target.id).emit('handUpdate', target.hand);
-            } else {
-                updateGame(msg);
-            }
-        }
-        else if(card.type === CARD_TYPES.NOPE) {
-            // 否定：取消其他牌的效果（暂时作为普通牌，完整实现需要更复杂的逻辑）
-            // TODO: 实现回合外使用和取消效果的功能
-            sendGameLog(`🚫 ${p.name} 使用了否定卡（功能待完善）`, 'play');
-            updateGame(msg);
-        }
-        else if(card.type === CARD_TYPES.DRAW_BOTTOM) {
-            // 抽底：从牌堆底部抽一张牌，作为摸牌行为，结束回合
-            sendGameLog(`⬇️ ${p.name} 使用抽底卡（作为摸牌）`, 'play');
-
-            if(deck.length === 0) {
-                sendGameLog(`牌堆已空，无法抽牌`, 'info');
+            const target = players.find(pl => pl.id === targetId && pl.isAlive);
+            if(!target) {
                 nextTurn();
                 return;
             }
 
-            // 从牌堆底部（数组开头）抽一张牌
-            const bottomCard = deck.shift();
+            const isSelfAttack = p.id === targetId;
+            const currentTurns = turnsLeftToTake;
+            const currentTurnIdx = turnIndex;
 
-            // 广播抽到的牌
-            io.emit('cardPlayed', {
-                cardType: bottomCard.type,
-                playerName: `${p.name} 从底部抽到`,
-                playerId: p.id
-            });
-
-            if(bottomCard.type === CARD_TYPES.BOMB) {
-                const defuseIdx = p.hand.findIndex(c => c.type === CARD_TYPES.DEFUSE);
-
-                if(defuseIdx !== -1) {
-                    p.hand.splice(defuseIdx, 1);
-                    discardPile.push({type: CARD_TYPES.DEFUSE});
-                    gameStatus = 'defusing';
-                    defusingPlayerId = socket.id;
-                    sendGameLog(`💥 ${p.name} 从底部摸到了炸弹！使用拆除卡拆除`, 'defuse');
-                    updateGame(`💥 ${p.name} 从底部摸到了炸弹！使用拆除卡！`);
-                    socket.emit('askBombPosition', deck.length);
+            // 创建执行回调（被否定后不会执行）
+            const executeCallback = () => {
+                if(isSelfAttack) {
+                    // 甩锅给自己：增加自己的摸牌次数
+                    turnsLeftToTake = currentTurns + 1;
+                    sendGameLog(`🍳 ${p.name} 甩锅给自己！增加摸牌次数`, 'attack');
+                    sendGameLog(`${p.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
+                    updateGame(msg + ` 对自己`);
                 } else {
-                    p.isAlive = false;
-                    discardPile.push(bottomCard);
-                    sendGameLog(`☠️ ${p.name} 从底部抽到炸弹被炸飞了！`, 'bomb');
-                    updateGame(`☠️ ${p.name} 从底部抽到炸弹被炸飞了！`);
+                    // 甩锅给别人
+                    sendGameLog(`🍳 ${p.name} 甩锅给 ${target.name}！`, 'attack');
+
+                    // 找到目标玩家的索引
+                    const targetIndex = players.findIndex(pl => pl.id === targetId);
+                    if(targetIndex !== -1) {
+                        // 立即切换到目标玩家
+                        turnIndex = targetIndex;
+                        // x1 甩锅：累加1次（而不是直接设置为1）
+                        turnsLeftToTake = currentTurns + 1;
+                        sendGameLog(`${target.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
+                        updateGame(msg + ` 对 ${target.name}`);
+                    } else {
+                        nextTurn();
+                    }
+                }
+            };
+
+            // 启动否定窗口
+            startNopeWindow({
+                type: 'attack',
+                playerId: p.id,
+                playerName: p.name,
+                data: { targetId, targetName: target.name, isSelfAttack },
+                executeCallback
+            });
+        }
+        else if(card.type === CARD_TYPES.ATTACK_2X) {
+            // 双重甩锅（x2）：跳过自己的摸牌，立即切换回合到目标玩家，目标需要抽牌次数+2
+            const target = players.find(pl => pl.id === targetId && pl.isAlive);
+            if(!target) {
+                nextTurn();
+                return;
+            }
+
+            const isSelfAttack = p.id === targetId;
+            const currentTurns = turnsLeftToTake;
+
+            // 创建执行回调
+            const executeCallback = () => {
+                if(isSelfAttack) {
+                    // 甩锅给自己：增加自己的摸牌次数
+                    turnsLeftToTake = currentTurns + 2;
+                    sendGameLog(`🍳🍳 ${p.name} 双重甩锅给自己！增加摸牌次数`, 'attack');
+                    sendGameLog(`${p.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
+                    updateGame(msg + ` 对自己`);
+                } else {
+                    // 甩锅给别人
+                    sendGameLog(`🍳🍳 ${p.name} 双重甩锅给 ${target.name}！`, 'attack');
+
+                    // 找到目标玩家的索引
+                    const targetIndex = players.findIndex(pl => pl.id === targetId);
+                    if(targetIndex !== -1) {
+                        // 立即切换到目标玩家
+                        turnIndex = targetIndex;
+                        // x2 甩锅：累加2次
+                        turnsLeftToTake = currentTurns + 2;
+                        sendGameLog(`${target.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
+                        updateGame(msg + ` 对 ${target.name}`);
+                    } else {
+                        nextTurn();
+                    }
+                }
+            };
+
+            // 启动否定窗口
+            startNopeWindow({
+                type: 'attack_2x',
+                playerId: p.id,
+                playerName: p.name,
+                data: { targetId, targetName: target.name, isSelfAttack },
+                executeCallback
+            });
+        }
+        else if(card.type === CARD_TYPES.SKIP) {
+            // 跳过：减少一次摸牌次数
+            const currentTurns = turnsLeftToTake;
+
+            // 创建执行回调
+            const executeCallback = () => {
+                turnsLeftToTake = currentTurns - 1;
+                if(turnsLeftToTake === 0) {
+                    sendGameLog(`⏭️ ${p.name} 跳过了回合`, 'play');
+                    nextTurn();
+                } else {
+                    sendGameLog(`⏭️ ${p.name} 跳过了1次，还需要出牌 ${turnsLeftToTake} 次`, 'play');
+                    updateGame(msg);
+                }
+            };
+
+            // 启动否定窗口
+            startNopeWindow({
+                type: 'skip',
+                playerId: p.id,
+                playerName: p.name,
+                data: {},
+                executeCallback
+            });
+        }
+        else if(card.type === CARD_TYPES.FUTURE) {
+            // 预言：告诉玩家炸弹在第几张
+            const playerId = socket.id;
+
+            // 创建执行回调
+            const executeCallback = () => {
+                const futureCards = deck.slice(-3).reverse();
+                const bombIndex = futureCards.findIndex(c => c.type === CARD_TYPES.BOMB);
+
+                if(bombIndex !== -1) {
+                    const position = bombIndex + 1; // 转换为1-based索引
+                    io.to(playerId).emit('showFutureText', `🔮 预言：炸弹在接下来的第 ${position} 张牌！`);
+                    sendGameLog(`🔮 ${p.name} 使用预言，发现了炸弹的位置`, 'play');
+                } else {
+                    io.to(playerId).emit('showFutureText', `🔮 预言：接下来的3张牌中没有炸弹，安全！`);
+                    sendGameLog(`🔮 ${p.name} 使用预言查看未来`, 'play');
+                }
+                updateGame(msg);
+            };
+
+            // 启动否定窗口
+            startNopeWindow({
+                type: 'future',
+                playerId: p.id,
+                playerName: p.name,
+                data: {},
+                executeCallback
+            });
+        }
+        else if(card.type === CARD_TYPES.PERSPECTIVE) {
+            // 透视：显示前三张牌的牌面
+            const playerId = socket.id;
+
+            // 创建执行回调
+            const executeCallback = () => {
+                io.to(playerId).emit('showFuture', deck.slice(-3).reverse());
+                sendGameLog(`👁️ ${p.name} 使用透视查看牌堆顶部三张牌`, 'play');
+                updateGame(msg);
+            };
+
+            // 启动否定窗口
+            startNopeWindow({
+                type: 'perspective',
+                playerId: p.id,
+                playerName: p.name,
+                data: {},
+                executeCallback
+            });
+        }
+        else if(card.type === CARD_TYPES.SHUFFLE) {
+            // 洗牌：重新洗牌堆
+
+            // 创建执行回调
+            const executeCallback = () => {
+                deck.sort(() => Math.random() - 0.5);
+                sendGameLog(`🔀 ${p.name} 使用洗牌重新洗牌`, 'play');
+                updateGame(msg);
+            };
+
+            // 启动否定窗口
+            startNopeWindow({
+                type: 'shuffle',
+                playerId: p.id,
+                playerName: p.name,
+                data: {},
+                executeCallback
+            });
+        }
+        else if(card.type === CARD_TYPES.STEAL) {
+            // 索要：让目标玩家选一张牌给出
+            const target = players.find(p => p.id === targetId && p.isAlive);
+            if(!target) {
+                updateGame(msg);
+                return;
+            }
+
+            const requesterId = socket.id;
+            const requesterName = p.name;
+            const targetPlayerId = targetId;
+            const targetPlayerName = target.name;
+
+            // 创建执行回调
+            const executeCallback = () => {
+                // 再次检查目标是否还有手牌
+                const currentTarget = players.find(p => p.id === targetPlayerId && p.isAlive);
+                if(currentTarget && currentTarget.hand.length > 0) {
+                    sendGameLog(`🎯 ${requesterName} 向 ${targetPlayerName} 索要一张牌`, 'play');
+                    updateGame(msg + ` 对 ${targetPlayerName}`);
+                    io.to(targetPlayerId).emit('giveCard', { requesterId, requesterName });
+                } else {
+                    sendGameLog(`🎯 ${requesterName} 索要失败（目标没有牌）`, 'play');
+                    updateGame(msg);
+                }
+            };
+
+            // 启动否定窗口
+            startNopeWindow({
+                type: 'steal',
+                playerId: p.id,
+                playerName: p.name,
+                data: { targetId: targetPlayerId, targetName: targetPlayerName },
+                executeCallback
+            });
+        }
+        else if(card.type === CARD_TYPES.SWAP) {
+            // 交换：两人手牌互换
+            const target = players.find(p => p.id === targetId && p.isAlive);
+            if(!target) {
+                updateGame(msg);
+                return;
+            }
+
+            const playerId = socket.id;
+            const playerName = p.name;
+            const targetPlayerId = targetId;
+            const targetPlayerName = target.name;
+
+            // 创建执行回调
+            const executeCallback = () => {
+                // 找到当前的玩家对象
+                const currentPlayer = players.find(p => p.id === playerId);
+                const currentTarget = players.find(p => p.id === targetPlayerId && p.isAlive);
+
+                if(currentPlayer && currentTarget) {
+                    // 交换手牌
+                    const temp = currentPlayer.hand;
+                    currentPlayer.hand = currentTarget.hand;
+                    currentTarget.hand = temp;
+
+                    sendGameLog(`🔄 ${playerName} 与 ${targetPlayerName} 交换了手牌`, 'play');
+                    updateGame(msg + ` 与 ${targetPlayerName} 交换手牌`);
+
+                    // 更新双方手牌
+                    io.to(playerId).emit('handUpdate', currentPlayer.hand);
+                    io.to(targetPlayerId).emit('handUpdate', currentTarget.hand);
+                } else {
+                    sendGameLog(`🔄 ${playerName} 交换失败（目标已死亡）`, 'play');
+                    updateGame(msg);
+                }
+            };
+
+            // 启动否定窗口
+            startNopeWindow({
+                type: 'swap',
+                playerId: p.id,
+                playerName: p.name,
+                data: { targetId: targetPlayerId, targetName: targetPlayerName },
+                executeCallback
+            });
+        }
+        else if(card.type === CARD_TYPES.NOPE) {
+            // 否定卡只能通过 playNope 事件使用（回合外使用）
+            // 不应该在这里被触发
+            socket.emit('gameLog', { message: '否定卡应该在有可否定动作时使用！', type: 'error' });
+            // 退还卡牌
+            p.hand.push(card);
+            updateGame(msg);
+        }
+        else if(card.type === CARD_TYPES.DRAW_BOTTOM) {
+            // 抽底：从牌堆底部抽一张牌，作为摸牌行为，结束回合
+            const playerId = socket.id;
+            const playerName = p.name;
+
+            // 创建执行回调
+            const executeCallback = () => {
+                sendGameLog(`⬇️ ${playerName} 使用抽底卡（作为摸牌）`, 'play');
+
+                if(deck.length === 0) {
+                    sendGameLog(`牌堆已空，无法抽牌`, 'info');
+                    nextTurn();
+                    return;
+                }
+
+                // 从牌堆底部（数组开头）抽一张牌
+                const bottomCard = deck.shift();
+
+                // 广播抽到的牌
+                io.emit('cardPlayed', {
+                    cardType: bottomCard.type,
+                    playerName: `${playerName} 从底部抽到`,
+                    playerId: playerId
+                });
+
+                const currentPlayer = players.find(p => p.id === playerId);
+                if(!currentPlayer) {
+                    nextTurn();
+                    return;
+                }
+
+                if(bottomCard.type === CARD_TYPES.BOMB) {
+                    const defuseIdx = currentPlayer.hand.findIndex(c => c.type === CARD_TYPES.DEFUSE);
+
+                    if(defuseIdx !== -1) {
+                        currentPlayer.hand.splice(defuseIdx, 1);
+                        discardPile.push({type: CARD_TYPES.DEFUSE});
+                        gameStatus = 'defusing';
+                        defusingPlayerId = playerId;
+                        sendGameLog(`💥 ${playerName} 从底部摸到了炸弹！使用拆除卡拆除`, 'defuse');
+                        updateGame(`💥 ${playerName} 从底部摸到了炸弹！使用拆除卡！`);
+                        io.to(playerId).emit('askBombPosition', deck.length);
+                    } else {
+                        currentPlayer.isAlive = false;
+                        discardPile.push(bottomCard);
+                        sendGameLog(`☠️ ${playerName} 从底部抽到炸弹被炸飞了！`, 'bomb');
+                        updateGame(`☠️ ${playerName} 从底部抽到炸弹被炸飞了！`);
+                        nextTurn();
+                    }
+                } else {
+                    currentPlayer.hand.push(bottomCard);
+                    sendGameLog(`${playerName} 从底部摸了一张牌（作为摸牌，结束出牌阶段）`, 'draw');
                     nextTurn();
                 }
-            } else {
-                p.hand.push(bottomCard);
-                sendGameLog(`${p.name} 从底部摸了一张牌（作为摸牌，结束出牌阶段）`, 'draw');
-                nextTurn();
-            }
+            };
+
+            // 启动否定窗口
+            startNopeWindow({
+                type: 'draw_bottom',
+                playerId: p.id,
+                playerName: p.name,
+                data: {},
+                executeCallback
+            });
         }
         else {
             sendGameLog(`${p.name} 使用了 ${card.type}`, 'play');
@@ -535,6 +772,54 @@ io.on('connection', (socket) => {
 
         updateGame("炸弹已悄悄放回...");
         nextTurn();
+    });
+
+    socket.on('playNope', (data) => {
+        // 否定卡：可以在任何时候打出（回合外使用）
+        const p = players.find(p => p.id === socket.id);
+        if(!p || !p.isAlive) return;
+
+        const cardIndex = data.cardIndex;
+        const card = p.hand[cardIndex];
+
+        if(!card || card.type !== CARD_TYPES.NOPE) return;
+
+        // 检查是否有待否定的动作
+        if(!pendingAction) {
+            socket.emit('gameLog', { message: '当前没有可以否定的动作！', type: 'error' });
+            return;
+        }
+
+        // 检查是否是自己的动作 - 不能否定自己
+        if(pendingAction.playerId === socket.id) {
+            socket.emit('gameLog', { message: '不能否定自己的动作！', type: 'error' });
+            return;
+        }
+
+        // 打出否定卡
+        p.hand.splice(cardIndex, 1);
+        discardPile.push(card);
+        io.to(p.id).emit('handUpdate', p.hand);
+
+        // 添加到否定链
+        nopeChain.push({ playerId: p.id, playerName: p.name });
+        sendGameLog(`🚫 ${p.name} 使用否定卡！(否定链: ${nopeChain.length})`, 'nope');
+
+        // 重置定时器，再给其他人时间否定这个否定
+        if(nopeWindow) {
+            clearTimeout(nopeWindow);
+        }
+
+        nopeWindow = setTimeout(() => {
+            executeOrCancelAction();
+        }, NOPE_WAIT_TIME);
+
+        // 广播否定事件
+        io.emit('nopePlayed', {
+            playerName: p.name,
+            nopeCount: nopeChain.length,
+            waitTime: NOPE_WAIT_TIME
+        });
     });
 
     socket.on('disconnect', () => {

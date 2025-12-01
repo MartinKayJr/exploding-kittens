@@ -113,6 +113,22 @@
     </div>
 </div>
 
+<!-- 否定窗口 -->
+<div id="nope-window-modal" class="modal" style="display:none;">
+    <div class="modal-content nope-theme">
+        <h3>⚠️ 否定窗口</h3>
+        <div id="nope-action-info" style="font-size: 20px; margin: 15px 0; padding: 15px; background: rgba(52, 152, 219, 0.2); border-radius: 8px; border-left: 4px solid #3498db;">
+            等待动作...
+        </div>
+        <div id="nope-countdown" style="font-size: 32px; font-weight: bold; margin: 20px 0;">3.0s</div>
+        <div id="nope-chain-info" style="margin-bottom: 20px;">否定链: <span id="nope-chain-count">0</span> 次</div>
+        <button id="nope-btn" onclick="playNopeCard()" style="background: #f39c12; font-size: 18px; padding: 15px 30px;">
+            🚫 使用否定卡 (N)
+        </button>
+        <div style="margin-top: 10px; color: #95a5a6; font-size: 14px;">等待中...</div>
+    </div>
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script src="client.js"></script>
 </body>

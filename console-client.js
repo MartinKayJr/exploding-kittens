@@ -56,6 +56,11 @@ let isHost = false;
 let currentScene = 'login'; // login, lobby, game
 let gameSubScene = 'main'; // main, selectCard, selectTarget, selectBombPos, giveCard, info
 
+// 否定卡状态
+let nopeWindowActive = false;
+let nopeCountdown = 0;
+let nopeChainCount = 0;
+
 // === 创建屏幕 ===
 const screen = blessed.screen({
     smartCSR: true,
@@ -75,7 +80,7 @@ const CARD_NAMES = {
     '预言': '预言',
     '透视': '透视',
     '洗牌': '洗牌',
-    '抽卡': '索要',
+    '索要': '索要',
     '抽底': '抽底',
     '交换': '交换',
     '否定': '否定'
@@ -90,7 +95,7 @@ const CARD_SYMBOLS = {
     '预言': '🔮',
     '透视': '👁',
     '洗牌': '🔀',
-    '抽卡': '🎯',
+    '索要': '🎯',
     '抽底': '⬇️',
     '交换': '🔄',
     '否定': '🚫'
@@ -303,7 +308,7 @@ const bombRateBox = blessed.box({
     left: 0,
     width: '25%',
     height: '40%',
-    label: ' 炸弹概率 ',
+    label: ' 概率 ',
     border: {
         type: 'line'
     },
@@ -323,7 +328,7 @@ const playArea = blessed.box({
     left: '25%',
     width: '50%',
     height: '40%',
-    label: ' 出牌区 ',
+    label: ' 桌面 ',
     border: {
         type: 'line'
     },
@@ -402,12 +407,34 @@ const actionHint = blessed.box({
     content: '{center}等待你的回合...{/center}'
 });
 
+// 否定窗口提示框
+const nopeWindowBox = blessed.box({
+    top: 'center',
+    left: 'center',
+    width: '60%',
+    height: 7,
+    border: {
+        type: 'line'
+    },
+    style: {
+        fg: 'yellow',
+        bg: 'black',
+        border: {
+            fg: 'yellow'
+        }
+    },
+    tags: true,
+    hidden: true,
+    content: ''
+});
+
 gameScene.append(gameTitle);
 gameScene.append(bombRateBox);
 gameScene.append(playArea);
 gameScene.append(playerBox);
 gameScene.append(gameLog);
 gameScene.append(actionHint);
+gameScene.append(nopeWindowBox);
 
 // ========== 通用选择对话框 ==========
 const selectionDialog = blessed.list({
@@ -630,7 +657,26 @@ function updateGameTitle() {
 }
 
 function updateActionHint() {
-    if (!isMyTurn) {
+    if (nopeWindowActive) {
+        // 否定窗口激活时，检查是否是自己出的牌
+        const isMyCard = lastPlayedBy === myName;
+
+        if (isMyCard) {
+            // 如果是自己出的牌，不能否定
+            actionHint.setContent('{center}{gray-fg}你不能否定自己的行动...{/gray-fg}{/center}');
+            actionHint.style.border.fg = 'gray';
+        } else {
+            // 如果是别人出的牌，检查是否有否定卡
+            const hasNopeCard = myHand.some(card => card.type === '否定');
+            if (hasNopeCard) {
+                actionHint.setContent('{center}{yellow-fg}【N】使用否定卡{/yellow-fg}{/center}');
+                actionHint.style.border.fg = 'yellow';
+            } else {
+                actionHint.setContent('{center}{gray-fg}等待否定窗口结束...{/gray-fg}{/center}');
+                actionHint.style.border.fg = 'gray';
+            }
+        }
+    } else if (!isMyTurn) {
         actionHint.setContent('{center}等待你的回合...{/center}');
         actionHint.style.border.fg = 'gray';
     } else {
@@ -787,6 +833,60 @@ function showInfo(title, content) {
     screen.render();
 }
 
+function showNopeWindow(actionInfo, waitTime) {
+    nopeWindowActive = true;
+    nopeCountdown = waitTime / 1000;
+    nopeChainCount = 0;
+
+    updateNopeWindowDisplay(actionInfo);
+    nopeWindowBox.show();
+    updateActionHint();
+    screen.render();
+
+    // 启动倒计时更新
+    const countdownInterval = setInterval(() => {
+        nopeCountdown -= 0.1;
+        if (nopeCountdown <= 0 || !nopeWindowActive) {
+            clearInterval(countdownInterval);
+        } else {
+            updateNopeWindowDisplay(actionInfo);
+        }
+    }, 100);
+}
+
+function updateNopeWindowDisplay(actionInfo = null) {
+    let content = '\n{center}{bold}{yellow-fg}⚠️  否定窗口 ⚠️{/yellow-fg}{/bold}{/center}\n\n';
+
+    // 显示动作详细信息
+    if (actionInfo) {
+        const { cardName, playerName, targetName, isSelfTarget } = actionInfo;
+
+        if (targetName) {
+            if (isSelfTarget) {
+                content += `{center}{cyan-fg}{bold}${playerName}{/bold} 对 {bold}自己{/bold} 使用了 {bold}${cardName}{/bold}{/cyan-fg}{/center}\n\n`;
+            } else {
+                content += `{center}{cyan-fg}{bold}${playerName}{/bold} 对 {bold}${targetName}{/bold} 使用了 {bold}${cardName}{/bold}{/cyan-fg}{/center}\n\n`;
+            }
+        } else {
+            content += `{center}{cyan-fg}{bold}${playerName}{/bold} 使用了 {bold}${cardName}{/bold}{/cyan-fg}{/center}\n\n`;
+        }
+    }
+
+    content += `{center}倒计时: {bold}${nopeCountdown.toFixed(1)}秒{/bold}{/center}\n`;
+    if (nopeChainCount > 0) {
+        content += `{center}否定链: {bold}${nopeChainCount}次{/bold}{/center}`;
+    }
+    nopeWindowBox.setContent(content);
+    screen.render();
+}
+
+function hideNopeWindow() {
+    nopeWindowActive = false;
+    nopeWindowBox.hide();
+    updateActionHint();
+    screen.render();
+}
+
 // ========== Socket.IO 连接 ==========
 function connectToServer() {
     addLog(`连接服务器: ${SERVER_URL}`);
@@ -862,6 +962,10 @@ function connectToServer() {
 
     socket.on('handUpdate', (hand) => {
         myHand = hand;
+        // 更新操作提示（可能获得或失去否定卡）
+        if (nopeWindowActive) {
+            updateActionHint();
+        }
     });
 
     socket.on('gameLog', (data) => {
@@ -959,6 +1063,44 @@ function connectToServer() {
         lastPlayedBy = data.playerName;
         updatePlayArea();
     });
+
+    socket.on('nopeWindowStart', (data) => {
+        // 构建详细的日志消息
+        let logMsg = `${data.playerName} 使用了 ${data.cardName || data.action}`;
+        if (data.targetName) {
+            if (data.isSelfTarget) {
+                logMsg += ` 对自己`;
+            } else {
+                logMsg += ` 对 ${data.targetName}`;
+            }
+        }
+        logMsg += '，等待否定...';
+        addLog(logMsg);
+
+        // 传递动作详细信息
+        showNopeWindow({
+            cardName: data.cardName || data.action,
+            playerName: data.playerName,
+            targetName: data.targetName,
+            isSelfTarget: data.isSelfTarget
+        }, data.waitTime);
+    });
+
+    socket.on('nopePlayed', (data) => {
+        nopeChainCount = data.nopeCount;
+        nopeCountdown = data.waitTime / 1000; // 重置倒计时
+        updateNopeWindowDisplay();
+        addLog(`${data.playerName} 使用否定卡！(否定链: ${data.nopeCount})`);
+    });
+
+    socket.on('nopeWindowEnd', (data) => {
+        hideNopeWindow();
+        if (data.isCancelled) {
+            addLog(`动作被否定！(否定次数: ${data.nopedCount})`);
+        } else if (data.nopedCount > 0) {
+            addLog(`否定被否定！动作继续执行 (否定次数: ${data.nopedCount})`);
+        }
+    });
 }
 
 // ========== 键盘事件 ==========
@@ -1036,6 +1178,30 @@ screen.key(['d', 'D'], () => {
     if (selectionDialog.visible || infoDialog.visible) return;
     socket.emit('draw');
     addLog('抽牌...');
+});
+
+// N 键 - 使用否定卡（在否定窗口激活时）
+screen.key(['n', 'N'], () => {
+    if (currentScene !== 'game') return;
+    if (!nopeWindowActive) return;
+    if (selectionDialog.visible || infoDialog.visible) return;
+
+    // 检查是否是自己出的牌
+    if (lastPlayedBy === myName) {
+        addLog('你不能否定自己的行动！');
+        return;
+    }
+
+    // 查找手牌中的否定卡
+    const nopeCardIndex = myHand.findIndex(card => card.type === '否定');
+    if (nopeCardIndex === -1) {
+        addLog('你没有否定卡！');
+        return;
+    }
+
+    // 发送 playNope 事件
+    socket.emit('playNope', { cardIndex: nopeCardIndex });
+    addLog('使用否定卡...');
 });
 
 // ESC 键处理（仅在项目场景）

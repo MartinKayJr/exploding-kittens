@@ -148,12 +148,45 @@ button:hover { transform: scale(1.05); }
 .card-3d[data-type="炸弹"] { background-image: url('/assets/炸弹.png'); }
 .card-3d[data-type="拆除"] { background-image: url('/assets/拆除.png'); }
 .card-3d[data-type="攻击"] { background-image: url('/assets/甩锅.png'); }
+.card-3d[data-type="甩锅x2"] { background-image: url('/assets/甩锅.png'); }
 .card-3d[data-type="跳过"] { background-image: url('/assets/跳过.png'); }
 .card-3d[data-type="预言"] { background-image: url('/assets/预言.png'); }
 .card-3d[data-type="透视"] { background-image: url('/assets/透视.png'); }
 .card-3d[data-type="洗牌"] { background-image: url('/assets/洗牌.png'); }
-.card-3d[data-type="抽卡"] { background-image: url('/assets/索要.png'); }
-.card-3d[data-type="否定"] { background-image: url('/assets/交换.png'); }
+.card-3d[data-type="索要"] { background-image: url('/assets/索要.png'); }
+.card-3d[data-type="抽底"] { background-image: url('/assets/索要.png'); }
+.card-3d[data-type="交换"] { background-image: url('/assets/交换.png'); }
+
+/* 否定牌 - 纯CSS绘制 */
+.card-3d[data-type="否定"] {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.card-3d[data-type="否定"]::before {
+    content: '🚫';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 70px;
+    z-index: 2;
+}
+
+.card-3d[data-type="否定"]::after {
+    content: 'NOPE';
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 16px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    letter-spacing: 2px;
+    z-index: 2;
+}
 
 /* 摸牌堆的牌 - 等轴测视图样式 */
 .card-3d.draw-pile-card {
@@ -245,12 +278,45 @@ button:hover { transform: scale(1.05); }
 .hand-card[data-type="炸弹"] { background-image: url('/assets/炸弹.png'); }
 .hand-card[data-type="拆除"] { background-image: url('/assets/拆除.png'); }
 .hand-card[data-type="攻击"] { background-image: url('/assets/甩锅.png'); }
+.hand-card[data-type="甩锅x2"] { background-image: url('/assets/甩锅x2.png'); }
 .hand-card[data-type="跳过"] { background-image: url('/assets/跳过.png'); }
 .hand-card[data-type="预言"] { background-image: url('/assets/预言.png'); }
 .hand-card[data-type="透视"] { background-image: url('/assets/透视.png'); }
 .hand-card[data-type="洗牌"] { background-image: url('/assets/洗牌.png'); }
-.hand-card[data-type="抽卡"] { background-image: url('/assets/索要.png'); }
-.hand-card[data-type="否定"] { background-image: url('/assets/交换.png'); }
+.hand-card[data-type="索要"] { background-image: url('/assets/索要.png'); }
+.hand-card[data-type="抽底"] { background-image: url('/assets/抽底.png'); }
+.hand-card[data-type="交换"] { background-image: url('/assets/交换.png'); }
+
+/* 否定牌 - 纯CSS绘制（手牌） */
+.hand-card[data-type="否定"] {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.hand-card[data-type="否定"]::before {
+    content: '🚫';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 60px;
+    z-index: 2;
+}
+
+.hand-card[data-type="否定"]::after {
+    content: 'NOPE';
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    letter-spacing: 1.5px;
+    z-index: 2;
+}
 
 /* --- 弹窗 --- */
 .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 999; justify-content: center; align-items: center; }
@@ -331,12 +397,46 @@ button:hover { transform: scale(1.05); }
 .give-card-item[data-type="炸弹"] { background-image: url('/assets/炸弹.png'); }
 .give-card-item[data-type="拆除"] { background-image: url('/assets/拆除.png'); }
 .give-card-item[data-type="攻击"] { background-image: url('/assets/甩锅.png'); }
+.give-card-item[data-type="甩锅x2"] { background-image: url('/assets/甩锅.png'); }
 .give-card-item[data-type="跳过"] { background-image: url('/assets/跳过.png'); }
 .give-card-item[data-type="预言"] { background-image: url('/assets/预言.png'); }
 .give-card-item[data-type="透视"] { background-image: url('/assets/透视.png'); }
 .give-card-item[data-type="洗牌"] { background-image: url('/assets/洗牌.png'); }
-.give-card-item[data-type="抽卡"] { background-image: url('/assets/索要.png'); }
-.give-card-item[data-type="否定"] { background-image: url('/assets/交换.png'); }
+.give-card-item[data-type="索要"] { background-image: url('/assets/索要.png'); }
+.give-card-item[data-type="抽底"] { background-image: url('/assets/索要.png'); }
+.give-card-item[data-type="交换"] { background-image: url('/assets/交换.png'); }
+
+/* 否定牌 - 纯CSS绘制（给牌弹窗） */
+.give-card-item[data-type="否定"] {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.give-card-item[data-type="否定"]::before {
+    content: '🚫';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 50px;
+    z-index: 2;
+}
+
+.give-card-item[data-type="否定"]::after {
+    content: 'NOPE';
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
+    letter-spacing: 1px;
+    z-index: 2;
+}
+
 .danger-theme { border: 4px solid #c0392b; }
 
 /* 拆除炸弹位置按钮 */
@@ -519,4 +619,53 @@ button:hover { transform: scale(1.05); }
         opacity: 1;
         transform: translateX(0);
     }
+}
+
+/* --- 否定窗口样式 --- */
+.nope-theme {
+    background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+    color: white;
+    border: 3px solid #f1c40f;
+    box-shadow: 0 0 30px rgba(243, 156, 18, 0.5);
+    animation: nopePulse 1s infinite;
+}
+
+.nope-theme h3 {
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    margin-top: 0;
+}
+
+.nope-theme button {
+    background: #e74c3c;
+    border: 2px solid #c0392b;
+    color: white;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.nope-theme button:hover {
+    background: #c0392b;
+    transform: scale(1.1);
+    box-shadow: 0 0 15px rgba(231, 76, 60, 0.5);
+}
+
+.nope-theme button:active {
+    transform: scale(0.95);
+}
+
+@keyframes nopePulse {
+    0%, 100% {
+        box-shadow: 0 0 30px rgba(243, 156, 18, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 50px rgba(243, 156, 18, 0.8);
+    }
+}
+
+/* 否定日志条目 */
+.log-entry.log-nope {
+    border-left-color: #f39c12;
+    background: rgba(243, 156, 18, 0.2);
+    font-weight: bold;
 }
