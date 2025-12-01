@@ -15,12 +15,15 @@ const CARD_TYPES = {
     BOMB: '炸弹',
     DEFUSE: '拆除',
     ATTACK: '攻击',
+    ATTACK_2X: '甩锅x2',
     SKIP: '跳过',
     FUTURE: '预言',
     PERSPECTIVE: '透视',
     SHUFFLE: '洗牌',
     STEAL: '抽卡',
-    NOPE: '否定' // 简单起见作为占位普通牌
+    DRAW_BOTTOM: '抽底',
+    SWAP: '交换',
+    NOPE: '否定'
 };
 
 // --- 全局状态 ---
@@ -39,35 +42,43 @@ function sendGameLog(message, type = 'info') {
 
 function initDeck(playerCount) {
     let d = [];
-    // 1. 功能牌
-    const types = [CARD_TYPES.ATTACK, CARD_TYPES.SKIP, CARD_TYPES.SHUFFLE, CARD_TYPES.FUTURE, CARD_TYPES.PERSPECTIVE, CARD_TYPES.STEAL];
+    // 1. 甩锅卡（较多数量，游戏核心卡牌）
+    for(let i=0; i<8; i++) d.push({type: CARD_TYPES.ATTACK, id: Math.random()});
+    for(let i=0; i<5; i++) d.push({type: CARD_TYPES.ATTACK_2X, id: Math.random()});
+
+    // 2. 抽底卡（较多数量，重要防御卡）
+    for(let i=0; i<7; i++) d.push({type: CARD_TYPES.DRAW_BOTTOM, id: Math.random()});
+
+    // 3. 其他功能牌
+    const types = [CARD_TYPES.SKIP, CARD_TYPES.SHUFFLE, CARD_TYPES.FUTURE, CARD_TYPES.PERSPECTIVE, CARD_TYPES.STEAL];
     types.forEach(type => {
         for(let i=0; i<5; i++) d.push({type, id: Math.random()});
     });
-    // 填充一些普通牌
+
+    // 4. 交换卡和否定卡
+    for(let i=0; i<4; i++) d.push({type: CARD_TYPES.SWAP, id: Math.random()});
     for(let i=0; i<5; i++) d.push({type: CARD_TYPES.NOPE, id: Math.random()});
 
     d.sort(() => Math.random() - 0.5);
 
-    // 2. 发牌
+    // 4. 发牌给每位玩家
     players.forEach(p => {
         p.hand = [{type: CARD_TYPES.DEFUSE, id: Math.random()}];
         for(let i=0; i<4; i++) if(d.length) p.hand.push(d.pop());
         p.isAlive = true;
-        p.attackCount = 0; // 被甩锅的次数
     });
 
-    // 3. 放入炸弹 (与人数相等)
+    // 5. 放入炸弹 (与人数相等)
     for(let i=0; i < playerCount; i++) d.push({type: CARD_TYPES.BOMB, id: Math.random()});
 
-    // 4. 放入剩余拆除 (假设总共6张)
+    // 6. 放入剩余拆除 (假设总共6张)
     let extraDefuse = 6 - playerCount;
     for(let i=0; i<extraDefuse; i++) d.push({type: CARD_TYPES.DEFUSE, id: Math.random()});
 
     return d.sort(() => Math.random() - 0.5);
 }
 
-function nextTurn(attacks = 0) {
+function nextTurn() {
     const alive = players.filter(p => p.isAlive);
     if (alive.length === 1) {
         gameStatus = 'gameover';
@@ -76,27 +87,19 @@ function nextTurn(attacks = 0) {
         return;
     }
 
-    if (attacks > 0) turnsLeftToTake = (turnsLeftToTake - 1) + 2; // 累加规则
-    else {
-        if (turnsLeftToTake > 1) {
-            turnsLeftToTake--;
-            updateGame(); // 还是当前玩家
-            return;
-        } else {
-            turnsLeftToTake = 1;
-        }
+    // 处理剩余回合数
+    if (turnsLeftToTake > 1) {
+        turnsLeftToTake--;
+        updateGame(); // 还是当前玩家
+        return;
+    } else {
+        turnsLeftToTake = 1;
     }
 
+    // 切换到下一个存活的玩家
     do {
         turnIndex = (turnIndex + 1) % players.length;
     } while (!players[turnIndex].isAlive);
-
-    // 检查新的当前玩家是否被甩锅
-    const currentPlayer = players[turnIndex];
-    if(currentPlayer.attackCount > 0) {
-        turnsLeftToTake += currentPlayer.attackCount;
-        currentPlayer.attackCount = 0;
-    }
 
     updateGame();
 }
@@ -117,8 +120,7 @@ function updateGame(log = "") {
             name: p.name,
             cardCount: p.hand.length,
             isAlive: p.isAlive,
-            isHost: p.isHost,
-            attackCount: p.attackCount || 0
+            isHost: p.isHost
         })),
         log
     };
@@ -247,10 +249,17 @@ io.on('connection', (socket) => {
         if(!card || card.type === CARD_TYPES.DEFUSE || card.type === CARD_TYPES.BOMB) return; // 不能直接出
 
         // 需要选择目标的牌
-        if([CARD_TYPES.ATTACK, CARD_TYPES.STEAL, CARD_TYPES.NOPE].includes(card.type)) {
+        if([CARD_TYPES.ATTACK, CARD_TYPES.ATTACK_2X, CARD_TYPES.STEAL, CARD_TYPES.SWAP].includes(card.type)) {
             if(!targetId) {
                 // 需要选择目标，发送事件让客户端选择
                 socket.emit('selectTarget', { cardIndex: index, cardType: card.type });
+                return;
+            }
+
+            // 验证目标玩家是否存活（在移除卡牌之前）
+            const target = players.find(pl => pl.id === targetId);
+            if(!target || !target.isAlive) {
+                socket.emit('gameLog', { message: '目标玩家已死亡，无法对其使用卡牌！', type: 'error' });
                 return;
             }
         }
@@ -268,20 +277,84 @@ io.on('connection', (socket) => {
         let msg = `${p.name} 使用了 ${card.type}`;
 
         if(card.type === CARD_TYPES.ATTACK) {
-            // 甩锅：给目标玩家增加攻击次数
+            // 甩锅（x1）：跳过自己的摸牌，立即切换回合到目标玩家，目标需要抽牌次数+1
             const target = players.find(p => p.id === targetId && p.isAlive);
             if(target) {
-                target.attackCount = (target.attackCount || 0) + 1;
-                msg += ` 对 ${target.name}`;
-                sendGameLog(`🍳 ${p.name} 甩锅给 ${target.name}！`, 'attack');
+                const isSelfAttack = p.id === targetId;
+
+                if(isSelfAttack) {
+                    // 甩锅给自己：增加自己的摸牌次数
+                    turnsLeftToTake += 1;
+                    msg += ` 对自己`;
+                    sendGameLog(`🍳 ${p.name} 甩锅给自己！增加摸牌次数`, 'attack');
+                    sendGameLog(`${p.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
+                    updateGame(msg);
+                } else {
+                    // 甩锅给别人
+                    msg += ` 对 ${target.name}`;
+                    sendGameLog(`🍳 ${p.name} 甩锅给 ${target.name}！`, 'attack');
+
+                    // 找到目标玩家的索引
+                    const targetIndex = players.findIndex(p => p.id === targetId);
+                    if(targetIndex !== -1) {
+                        // 立即切换到目标玩家
+                        turnIndex = targetIndex;
+                        // x1 甩锅：累加1次（而不是直接设置为1）
+                        turnsLeftToTake = turnsLeftToTake + 1;
+                        sendGameLog(`${target.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
+                        updateGame(msg);
+                    } else {
+                        nextTurn();
+                    }
+                }
+            } else {
+                nextTurn();
             }
-            nextTurn();
+        }
+        else if(card.type === CARD_TYPES.ATTACK_2X) {
+            // 双重甩锅（x2）：跳过自己的摸牌，立即切换回合到目标玩家，目标需要抽牌次数+2
+            const target = players.find(p => p.id === targetId && p.isAlive);
+            if(target) {
+                const isSelfAttack = p.id === targetId;
+
+                if(isSelfAttack) {
+                    // 甩锅给自己：增加自己的摸牌次数
+                    turnsLeftToTake += 2;
+                    msg += ` 对自己`;
+                    sendGameLog(`🍳🍳 ${p.name} 双重甩锅给自己！增加摸牌次数`, 'attack');
+                    sendGameLog(`${p.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
+                    updateGame(msg);
+                } else {
+                    // 甩锅给别人
+                    msg += ` 对 ${target.name}`;
+                    sendGameLog(`🍳🍳 ${p.name} 双重甩锅给 ${target.name}！`, 'attack');
+
+                    // 找到目标玩家的索引
+                    const targetIndex = players.findIndex(p => p.id === targetId);
+                    if(targetIndex !== -1) {
+                        // 立即切换到目标玩家
+                        turnIndex = targetIndex;
+                        // x2 甩锅：累加2次（而不是直接设置为2）
+                        turnsLeftToTake = turnsLeftToTake + 2;
+                        sendGameLog(`${target.name} 需要出牌 ${turnsLeftToTake} 次（摸牌或跳过）`, 'attack');
+                        updateGame(msg);
+                    } else {
+                        nextTurn();
+                    }
+                }
+            } else {
+                nextTurn();
+            }
         }
         else if(card.type === CARD_TYPES.SKIP) {
             turnsLeftToTake--;
-            sendGameLog(`⏭️ ${p.name} 跳过了回合`, 'play');
-            if(turnsLeftToTake===0) nextTurn();
-            else updateGame(msg);
+            if(turnsLeftToTake === 0) {
+                sendGameLog(`⏭️ ${p.name} 跳过了回合`, 'play');
+                nextTurn();
+            } else {
+                sendGameLog(`⏭️ ${p.name} 跳过了1次，还需要出牌 ${turnsLeftToTake} 次`, 'play');
+                updateGame(msg);
+            }
         }
         else if(card.type === CARD_TYPES.FUTURE) {
             // 预言：告诉玩家炸弹在第几张
@@ -321,7 +394,7 @@ io.on('connection', (socket) => {
                 updateGame(msg);
             }
         }
-        else if(card.type === CARD_TYPES.NOPE) {
+        else if(card.type === CARD_TYPES.SWAP) {
             // 交换：两人手牌互换
             const target = players.find(p => p.id === targetId && p.isAlive);
             if(target) {
@@ -338,6 +411,56 @@ io.on('connection', (socket) => {
                 updateGame(msg);
             }
         }
+        else if(card.type === CARD_TYPES.NOPE) {
+            // 否定：取消其他牌的效果（暂时作为普通牌，完整实现需要更复杂的逻辑）
+            // TODO: 实现回合外使用和取消效果的功能
+            sendGameLog(`🚫 ${p.name} 使用了否定卡（功能待完善）`, 'play');
+            updateGame(msg);
+        }
+        else if(card.type === CARD_TYPES.DRAW_BOTTOM) {
+            // 抽底：从牌堆底部抽一张牌，作为摸牌行为，结束回合
+            sendGameLog(`⬇️ ${p.name} 使用抽底卡（作为摸牌）`, 'play');
+
+            if(deck.length === 0) {
+                sendGameLog(`牌堆已空，无法抽牌`, 'info');
+                nextTurn();
+                return;
+            }
+
+            // 从牌堆底部（数组开头）抽一张牌
+            const bottomCard = deck.shift();
+
+            // 广播抽到的牌
+            io.emit('cardPlayed', {
+                cardType: bottomCard.type,
+                playerName: `${p.name} 从底部抽到`,
+                playerId: p.id
+            });
+
+            if(bottomCard.type === CARD_TYPES.BOMB) {
+                const defuseIdx = p.hand.findIndex(c => c.type === CARD_TYPES.DEFUSE);
+
+                if(defuseIdx !== -1) {
+                    p.hand.splice(defuseIdx, 1);
+                    discardPile.push({type: CARD_TYPES.DEFUSE});
+                    gameStatus = 'defusing';
+                    defusingPlayerId = socket.id;
+                    sendGameLog(`💥 ${p.name} 从底部摸到了炸弹！使用拆除卡拆除`, 'defuse');
+                    updateGame(`💥 ${p.name} 从底部摸到了炸弹！使用拆除卡！`);
+                    socket.emit('askBombPosition', deck.length);
+                } else {
+                    p.isAlive = false;
+                    discardPile.push(bottomCard);
+                    sendGameLog(`☠️ ${p.name} 从底部抽到炸弹被炸飞了！`, 'bomb');
+                    updateGame(`☠️ ${p.name} 从底部抽到炸弹被炸飞了！`);
+                    nextTurn();
+                }
+            } else {
+                p.hand.push(bottomCard);
+                sendGameLog(`${p.name} 从底部摸了一张牌（作为摸牌，结束出牌阶段）`, 'draw');
+                nextTurn();
+            }
+        }
         else {
             sendGameLog(`${p.name} 使用了 ${card.type}`, 'play');
             updateGame(msg);
@@ -350,6 +473,12 @@ io.on('connection', (socket) => {
         const receiver = players.find(p => p.id === data.requesterId);
 
         if(!giver || !receiver || !giver.hand[data.cardIndex]) return;
+
+        // 验证双方都还存活
+        if(!giver.isAlive || !receiver.isAlive) {
+            socket.emit('gameLog', { message: '玩家已死亡，无法交换卡牌！', type: 'error' });
+            return;
+        }
 
         const card = giver.hand.splice(data.cardIndex, 1)[0];
         receiver.hand.push(card);

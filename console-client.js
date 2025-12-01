@@ -70,24 +70,30 @@ const CARD_NAMES = {
     '炸弹': '炸弹',
     '拆除': '拆除',
     '攻击': '甩锅',
+    '甩锅x2': '甩锅x2',
     '跳过': '跳过',
     '预言': '预言',
     '透视': '透视',
     '洗牌': '洗牌',
     '抽卡': '索要',
-    '否定': '交换'
+    '抽底': '抽底',
+    '交换': '交换',
+    '否定': '否定'
 };
 
 const CARD_SYMBOLS = {
     '炸弹': '💣',
     '拆除': '🛡',
     '攻击': '🍳',
+    '甩锅x2': '🍳🍳',
     '跳过': '⏭',
     '预言': '🔮',
     '透视': '👁',
     '洗牌': '🔀',
     '抽卡': '🎯',
-    '否定': '🔄'
+    '抽底': '⬇️',
+    '交换': '🔄',
+    '否定': '🚫'
 };
 
 function getCardName(cardType) {
@@ -511,6 +517,10 @@ function showScene(scene) {
         case 'lobby':
             lobbyScene.show();
             startButton.focus();
+            // 如果已经有玩家数据，立即更新显示
+            if(currentPlayers.length > 0) {
+                updateLobbyPlayerList();
+            }
             break;
         case 'game':
             gameScene.show();
@@ -586,13 +596,12 @@ function updatePlayerList() {
         const isCurrent = gameState && p.id === gameState.currentPlayerId;
         const aliveMark = p.isAlive ? '' : ' [已阵亡]';
         const meMark = isMe ? ' (你)' : '';
-        const attackMark = p.attackCount > 0 ? ` +${p.attackCount}` : '';
 
         let line = '';
         if (isCurrent) {
-            line = `{inverse} ► ${idx + 1}. ${p.name}${meMark}${attackMark}${aliveMark} [${p.cardCount}张] {/inverse}`;
+            line = `{inverse} ► ${idx + 1}. ${p.name}${meMark}${aliveMark} [${p.cardCount}张] {/inverse}`;
         } else {
-            line = `   ${idx + 1}. ${p.name}${meMark}${attackMark}${aliveMark} [${p.cardCount}张]`;
+            line = `   ${idx + 1}. ${p.name}${meMark}${aliveMark} [${p.cardCount}张]`;
         }
 
         content += line + '\n';
@@ -628,6 +637,26 @@ function updateActionHint() {
         actionHint.setContent('{center}{cyan-fg}【空格】出牌  【D】抽牌  【ESC】取消{/cyan-fg}{/center}');
         actionHint.style.border.fg = 'cyan';
     }
+    screen.render();
+}
+
+function updateLobbyPlayerList() {
+    let content = '\n';
+    currentPlayers.forEach((p, idx) => {
+        const isMe = p.id === (socket ? socket.id : null);
+        const hostMark = p.isHost ? ' 👑' : '';
+        const meMark = isMe ? ' (你)' : '';
+        content += `  ${idx + 1}. ${p.name}${hostMark}${meMark}\n`;
+    });
+    lobbyPlayerList.setContent(content);
+
+    // 更新状态提示
+    if (isHost) {
+        lobbyStatus.setContent('{center}{green-fg}你是房主，按 Enter 开始项目{/green-fg}{/center}');
+    } else {
+        lobbyStatus.setContent('{center}等待房主开始项目...{/center}');
+    }
+
     screen.render();
 }
 
@@ -680,8 +709,15 @@ function showCardSelection() {
     selectionDialog.once('cancel', handleCancel);
 }
 
-function showPlayerSelection(title, callback) {
-    const alivePlayers = currentPlayers.filter(p => p.id !== socket.id && p.isAlive);
+function showPlayerSelection(title, callback, allowSelf = false) {
+    // 根据 allowSelf 参数决定是否包含自己
+    const alivePlayers = currentPlayers.filter(p => {
+        if (allowSelf) {
+            return p.isAlive; // 包含所有存活玩家（包括自己）
+        } else {
+            return p.id !== socket.id && p.isAlive; // 排除自己
+        }
+    });
 
     if (alivePlayers.length === 0) {
         addLog('没有可选择的目标');
@@ -692,8 +728,9 @@ function showPlayerSelection(title, callback) {
     selectionDialog.setLabel(` ${title} (↑↓选择, Enter确认, ESC取消) `);
 
     const items = alivePlayers.map((p) => {
-        const attackBadge = p.attackCount > 0 ? ` +${p.attackCount}` : '';
-        return `${p.name}${attackBadge} [${p.cardCount}张]`;
+        const isMe = p.id === socket.id;
+        const meMark = isMe ? ' (你自己)' : '';
+        return `${p.name}${meMark} [${p.cardCount}张]`;
     });
 
     selectionDialog.setItems(items);
@@ -797,23 +834,7 @@ function connectToServer() {
         isHost = me ? me.isHost : false;
 
         if (currentScene === 'lobby') {
-            let content = '\n';
-            players.forEach((p, idx) => {
-                const isMe = p.id === socket.id;
-                const hostMark = p.isHost ? ' 👑' : '';
-                const meMark = isMe ? ' (你)' : '';
-                content += `  ${idx + 1}. ${p.name}${hostMark}${meMark}\n`;
-            });
-            lobbyPlayerList.setContent(content);
-
-            // 更新状态提示
-            if (isHost) {
-                lobbyStatus.setContent('{center}{green-fg}你是房主，按 Enter 开始项目{/green-fg}{/center}');
-            } else {
-                lobbyStatus.setContent('{center}等待房主开始项目...{/center}');
-            }
-
-            screen.render();
+            updateLobbyPlayerList();
         } else if (currentScene === 'game') {
             updatePlayerList();
         }
@@ -858,13 +879,18 @@ function connectToServer() {
         const cardName = getCardName(data.cardType);
         addLog(`请选择 ${cardName} 的目标`);
 
+        // 甩锅卡允许选择自己，其他卡不允许
+        const isAttackCard = data.cardType === '攻击' || data.cardType === '甩锅x2';
+        const allowSelf = isAttackCard;
+
         showPlayerSelection(`选择${cardName}的目标`, (selectedPlayer) => {
             socket.emit('play', {
                 index: data.cardIndex,
                 targetId: selectedPlayer.id
             });
-            addLog(`对 ${selectedPlayer.name} 使用 ${cardName}`);
-        });
+            const targetName = selectedPlayer.id === socket.id ? '自己' : selectedPlayer.name;
+            addLog(`对 ${targetName} 使用 ${cardName}`);
+        }, allowSelf);
     });
 
     socket.on('showFutureText', (text) => {
