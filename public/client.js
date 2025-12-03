@@ -301,6 +301,15 @@ socket.on('giveCard', (data) => {
     showGiveCardModal(data.requesterName, data.requesterId);
 });
 
+// 取消索要卡请求（被否定）
+socket.on('cancelGiveCard', () => {
+    const modal = document.getElementById('give-card-modal');
+    if (modal && modal.style.display === 'flex') {
+        modal.style.display = 'none';
+        addGameLog('索要请求已被否定！', 'nope');
+    }
+});
+
 // 显示给牌弹窗
 function showGiveCardModal(requesterName, requesterId) {
     const modal = document.getElementById('give-card-modal');

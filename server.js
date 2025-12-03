@@ -41,6 +41,9 @@ let nopeWindow = null; // 否定响应的定时器
 let nopeChain = []; // 否定链：[{playerId, playerName}]
 const NOPE_WAIT_TIME = 3000; // 等待否定的时间（毫秒）
 
+// 索要卡请求跟踪
+let activeGiveCardRequests = new Set(); // 存储格式: "requesterId:targetId"
+
 // --- 辅助函数 ---
 function sendGameLog(message, type = 'info') {
     io.emit('gameLog', { message, type });
@@ -86,30 +89,39 @@ function startNopeWindow(action) {
 function executeOrCancelAction() {
     if (!pendingAction) return;
 
-    const nopedCount = nopeChain.length;
+    // 立即保存并清空 pendingAction，防止在执行期间被否定
+    const actionToExecute = pendingAction;
+    const chainSnapshot = [...nopeChain];
+
+    pendingAction = null;
+    nopeChain = [];
+    nopeWindow = null;
+
+    const nopedCount = chainSnapshot.length;
     const isCancelled = nopedCount % 2 === 1; // 奇数次否定 = 取消
 
     // 广播否定窗口结束
     io.emit('nopeWindowEnd', {
         nopedCount,
         isCancelled,
-        nopeChain
+        nopeChain: chainSnapshot
     });
 
     if (isCancelled) {
         sendGameLog(`动作被否定！(否定次数: ${nopedCount})`, 'nope');
+        // 如果动作是索要卡，需要通知目标玩家取消选择并移除请求
+        if (actionToExecute.type === 'steal' && actionToExecute.data?.targetId) {
+            const requestKey = `${actionToExecute.playerId}:${actionToExecute.data.targetId}`;
+            activeGiveCardRequests.delete(requestKey);
+            io.to(actionToExecute.data.targetId).emit('cancelGiveCard');
+        }
     } else {
         if (nopedCount > 0) {
             sendGameLog(`否定被否定！动作继续执行 (否定次数: ${nopedCount})`, 'nope');
         }
         // 执行原动作
-        executeAction(pendingAction);
+        executeAction(actionToExecute);
     }
-
-    // 清理
-    pendingAction = null;
-    nopeChain = [];
-    nopeWindow = null;
 }
 
 function executeAction(action) {
@@ -561,6 +573,10 @@ io.on('connection', (socket) => {
                 // 再次检查目标是否还有手牌
                 const currentTarget = players.find(p => p.id === targetPlayerId && p.isAlive);
                 if(currentTarget && currentTarget.hand.length > 0) {
+                    // 添加请求到活跃请求列表
+                    const requestKey = `${requesterId}:${targetPlayerId}`;
+                    activeGiveCardRequests.add(requestKey);
+
                     sendGameLog(`🎯 ${requesterName} 向 ${targetPlayerName} 索要一张牌`, 'play');
                     updateGame(msg + ` 对 ${targetPlayerName}`);
                     io.to(targetPlayerId).emit('giveCard', { requesterId, requesterName });
@@ -711,14 +727,25 @@ io.on('connection', (socket) => {
 
         if(!giver || !receiver || !giver.hand[data.cardIndex]) return;
 
+        // 验证这是一个有效的索要请求
+        const requestKey = `${data.requesterId}:${socket.id}`;
+        if(!activeGiveCardRequests.has(requestKey)) {
+            socket.emit('gameLog', { message: '索要请求已失效（可能被否定）！', type: 'error' });
+            return;
+        }
+
         // 验证双方都还存活
         if(!giver.isAlive || !receiver.isAlive) {
             socket.emit('gameLog', { message: '玩家已死亡，无法交换卡牌！', type: 'error' });
+            activeGiveCardRequests.delete(requestKey);
             return;
         }
 
         const card = giver.hand.splice(data.cardIndex, 1)[0];
         receiver.hand.push(card);
+
+        // 移除已完成的请求
+        activeGiveCardRequests.delete(requestKey);
 
         sendGameLog(`${giver.name} 给了 ${receiver.name} 一张牌`, 'play');
         updateGame(`${giver.name} 给了 ${receiver.name} 一张牌`);

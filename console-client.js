@@ -1058,6 +1058,16 @@ function connectToServer() {
         });
     });
 
+    // 取消索要卡请求（被否定）
+    socket.on('cancelGiveCard', () => {
+        if (selectionDialog.visible) {
+            selectionDialog.removeAllListeners('select');
+            selectionDialog.hide();
+            addLog('索要请求已被否定！');
+            screen.render();
+        }
+    });
+
     socket.on('cardPlayed', (data) => {
         lastPlayedCard = data.cardType;
         lastPlayedBy = data.playerName;
